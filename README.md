@@ -1,4 +1,4 @@
-# NVT Projekat
+# NTP Projekat
 
 **Student:** Sava Janjić SV51/2021
 
