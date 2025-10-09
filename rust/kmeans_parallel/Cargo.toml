@@ -1,0 +1,11 @@
+[package]
+name = "kmeans_parallel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ndarray = "0.15"
+csv = "1.3"
+rand = "0.8"
+num_cpus = "1.16"
+rand_xorshift = "0.3"
