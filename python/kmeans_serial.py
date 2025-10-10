@@ -1,30 +1,23 @@
-from __future__ import print_function
-import numpy, random, copy
-
+import numpy as np
+import random
+import time
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 class Cluster(object):
-
     def __init__(self, center):
         self.center = center
-        self.data = []  # data that belongs to this cluster
+        self.data = []
 
     def recalculate_center(self):
-            if not self.data:
-                return 
-            
-            data_np = numpy.array(self.data)
-            
-            # Calculating sum of points by coordinates (sum of columns)
-            sum_of_data = numpy.sum(data_np, axis=0)
-            
-            # Number of data in cluster
-            n = len(self.data)
-            
-            # New center
-            self.center = (sum_of_data / n).tolist()
-                
-class KMeans(object):
+        if not self.data:
+            return 
+        data_np = np.array(self.data)
+        sum_of_data = np.sum(data_np, axis=0)
+        n = len(self.data)
+        self.center = (sum_of_data / n).tolist()
 
+class KMeans(object):
     def __init__(self, n_clusters, max_iter):
         self.data = None
         self.n_clusters = n_clusters
@@ -33,73 +26,90 @@ class KMeans(object):
 
     def fit(self, data):
         self.data = data
-        
-        # Dimensions of space
         dimensions = len(self.data[0])
-        # N random points as initial cluster centers
+
+        serial_time = 0.0
+        parallel_time = 0.0  # will be 0 here, just for completeness
+
+        # --- Initialize clusters (serial) ---
+        t0 = time.time()
         for i in range(self.n_clusters):
-            point = [random.random() for x in range(dimensions)]
+            point = [random.random() for _ in range(dimensions)]
             self.clusters.append(Cluster(point))
-        
+        t1 = time.time()
+        serial_time += (t1 - t0)
+
         iter_no = 0
-        tolerance = 1e-4  # small tolerance for convergence check
-        
-        while iter_no < self.max_iter: # Check < max_iter
-            # Cleaning the cluster
+        tolerance = 1e-4
+
+        while iter_no < self.max_iter:
+            # --- Clear clusters (serial) ---
+            t0 = time.time()
             for cluster in self.clusters:
                 cluster.data = []
-                
-            # Cluster assignment (E-step)
+            t1 = time.time()
+            serial_time += (t1 - t0)
+
+            # --- E-step: Assign points to clusters (serial) ---
+            t0 = time.time()
             for point in self.data:
                 cluster_index = self.predict(point)
                 self.clusters[cluster_index].data.append(point)
-                
-            # Update centers (M-step)
-            # Keeping old centers
-            old_centers = [numpy.array(c.center) for c in self.clusters]
-            
-            # Calculating new centers
+            t1 = time.time()
+            parallel_time += (t1 - t0)
+
+            # --- M-step: Recalculate centers (serial) ---
+            old_centers = [np.array(c.center) for c in self.clusters]
+            t0 = time.time()
             for cluster in self.clusters:
                 cluster.recalculate_center()
-            
-            # Convergence check
+            t1 = time.time()
+            parallel_time += (t1 - t0)
+
+            # --- Convergence check (serial) ---
+            t0 = time.time()
             moved_distance_sum = 0
             for i in range(self.n_clusters):
-                new_center = numpy.array(self.clusters[i].center)
+                new_center = np.array(self.clusters[i].center)
                 old_center = old_centers[i]
-                
-                # Calculating distance between new and old center
-                distance = numpy.linalg.norm(new_center - old_center)
+                distance = np.linalg.norm(new_center - old_center)
                 moved_distance_sum += distance
-                
-            #print("Iter no: " + str(iter_no) + ", Change of center: " + str(moved_distance_sum))
-            
+            t1 = time.time()
+            serial_time += (t1 - t0)
+
             if moved_distance_sum < tolerance:
                 break
-                
             iter_no += 1
+
+        total_time = serial_time + parallel_time
+        f_s = serial_time / total_time
+        return f_s
 
     def predict(self, point):
         min_distance = None
         cluster_index = None
-        for index in range(len(self.clusters)):
-            distance = self.euclidean_distance(point, self.clusters[index].center)
+        for index, cluster in enumerate(self.clusters):
+            distance = self.euclidean_distance(point, cluster.center)
             if min_distance is None or distance < min_distance:
                 cluster_index = index
                 min_distance = distance
-        
         return cluster_index
-    
+
     def euclidean_distance(self, x, y):
-        x_np = numpy.array(x)
-        y_np = numpy.array(y)
-        return numpy.linalg.norm(y_np - x_np)
-        
-    def sum_squared_error(self):
-        sse = 0
-        for cluster in self.clusters:
-            for point in cluster.data:
-                distance = self.euclidean_distance(cluster.center, point)
-                sse += distance**2 
-        
-        return sse
+        return np.linalg.norm(np.array(y) - np.array(x))
+
+# ----------------------------
+# MAIN
+# ----------------------------
+if __name__ == "__main__":
+    # Generate a small random dataset
+    base_train_path = "../data/movielens1m.csv"
+    df_full = pd.read_csv(base_train_path,  nrows=10000)
+    X_train = df_full.to_numpy()
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+
+    kmeans = KMeans(n_clusters=3, max_iter=10)
+    f_s = kmeans.fit(X_train)
+
+    print(f"Estimated fraction of serial code (f_s): {f_s*100:.2f}%")
