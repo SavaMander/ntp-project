@@ -11,9 +11,16 @@ path = "src/main.rs"
 name = "weak"
 path = "src/weak.rs"
 
+[[bin]]
+name = "visualize"
+path = "src/visualize.rs"
+
 [dependencies]
-ndarray = "0.15"
-csv = "1.3"
-rand = "0.8"
 num_cpus = "1.16"
 rand_xorshift = "0.3"
+rand = "0.8"
+csv = "1.3"
+ndarray = "0.16"  # Changed from 0.15 to match linfa
+linfa = "0.8"
+linfa-reduction = "0.8"
+plotters = "0.3"

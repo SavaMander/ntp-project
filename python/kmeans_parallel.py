@@ -26,21 +26,24 @@ def _assign_chunk(chunk_of_data, cluster_centers):
     
     return assignments
 
-def _map_m_step(cluster_data_list, dimensions):
-    results = []
+def _map_m_step(assignment_chunk, n_clusters, dimensions):
+    # Initialize C results (sum_vector, count) for all clusters
+    local_stats = []
+    for _ in range(n_clusters):
+        local_stats.append((numpy.zeros(dimensions).tolist(), 0))
     
-    for data_points in cluster_data_list:
-        if not data_points:
-            sum_of_data = numpy.zeros(dimensions).tolist()
-            n = 0
-        else:
-            data_np = numpy.array(data_points)
-            sum_of_data = numpy.sum(data_np, axis=0).tolist() 
-            n = len(data_points)
-            
-        results.append((sum_of_data, n))
+    for point, cluster_index in assignment_chunk:
+        current_sum, current_n = local_stats[cluster_index]
         
-    return results
+        # Accumulate sum
+        point_np = numpy.array(point)
+        current_sum_np = numpy.array(current_sum)
+        new_sum_np = current_sum_np + point_np
+        
+        # Update local stats
+        local_stats[cluster_index] = (new_sum_np.tolist(), current_n + 1)
+        
+    return local_stats
 
 class Cluster(object):
 
@@ -61,117 +64,128 @@ class KMeans(object):
         self.pool = None
 
     def fit(self, data):
-        self.data = data
-        total_serial_work = 0.0
-        total_parallel_work = 0.0
-        t_s_init_start = time.time()
-        dimensions = len(self.data[0])
-        random.seed(123)
-        numpy.random.seed(123)
-        for i in range(self.n_clusters):
-            point = [random.random() for x in range(dimensions)] 
-            self.clusters.append(Cluster(point))
-        t_s_init_end = time.time()
-        total_serial_work += (t_s_init_end - t_s_init_start)
-        iter_no = 0
-        tolerance = 1e-4 
-        n_processors = self.n_threads
-        data_size = len(self.data)
-        if n_processors > 1 and self.pool is None:
-            self.pool = multiprocessing.Pool(processes=n_processors)
-        while iter_no < self.max_iter:
-            # Clearing cluster data for new E-step
-            t_s1_start = time.time()
-            for cluster in self.clusters:
-                cluster.data = []
-            t_s1_end = time.time()
-            total_serial_work += (t_s1_end - t_s1_start)
+            self.data = data
+            total_serial_work = 0.0
+            total_parallel_work = 0.0
+            t_s_init_start = time.time()
+            dimensions = len(self.data[0])
+            log_filename = "results/parallel/results.txt"
+            with open(log_filename, 'w') as f:
+                f.write("")
+            random.seed(123)
+            numpy.random.seed(123)
+            for i in range(self.n_clusters):
+                point = [random.random() for x in range(dimensions)] 
+                self.clusters.append(Cluster(point))
+            t_s_init_end = time.time()
+            total_serial_work += (t_s_init_end - t_s_init_start)
+            iter_no = 0
+            tolerance = 1e-4 
+            n_processors = self.n_threads
+            data_size = len(self.data)
+            if n_processors > 1 and self.pool is None:
+                self.pool = multiprocessing.Pool(processes=n_processors)
             
-            # Parallel E-step
-            t_e_start = time.time()
             chunk_size_e = int(math.ceil(data_size / n_processors)) 
             data_chunks = [self.data[i:i + chunk_size_e] for i in range(0, data_size, chunk_size_e)]
-            current_centers = [c.center for c in self.clusters]
-            args_e = [(chunk, current_centers) for chunk in data_chunks]
-            if n_processors > 1:
+            
+            while iter_no < self.max_iter:               
+                # Parallel E-step (no change)
+                t_e_start = time.time()
+                current_centers = [c.center for c in self.clusters]
+                args_e = [(chunk, current_centers) for chunk in data_chunks]
+                if n_processors > 1:
                     results_e = self.pool.starmap(_assign_chunk, args_e)
-            else:
-                results_e = [_assign_chunk(*args_e[0])] 
-            t_e_end = time.time()
-            total_parallel_work += (t_e_end - t_e_start)
-            # Assign data to clusters
-            t_s2_start = time.time()
-            for result_chunk in results_e:
-                for point, cluster_index in result_chunk:
-                    self.clusters[cluster_index].data.append(point)
+                else:
+                    results_e = [_assign_chunk(*args_e[0])] 
+                t_e_end = time.time()
+                total_parallel_work += (t_e_end - t_e_start)
+                               
+                # Updating centers (M-step)
+                old_centers = [numpy.array(c.center) for c in self.clusters]
                 
-            # Updating centers (M-step)
-            old_centers = [numpy.array(c.center) for c in self.clusters]
-            t_s2_end = time.time()
-            total_serial_work += (t_s2_end - t_s2_start)
-            # Parallel M-step (Map-Reduce)
-            
-            # 1. Prepare data for Map phase
-            t_m_start = time.time()
-            cluster_data_copies = [c.data for c in self.clusters]
-            n_clusters = self.n_clusters
-            
-            # 2. Split clusters for threads
-            chunk_size_m = int(math.ceil(n_clusters / n_processors))
-            
-            # Creating chunks of clusters for workers
-            cluster_chunks = [cluster_data_copies[i:i + chunk_size_m] 
-                              for i in range(0, n_clusters, chunk_size_m)]
+                # Map Phase (Parallel reduction using N threads)
+                t_m_start = time.time()
+                n_clusters = self.n_clusters
+                
+                args_m_opt = [(chunk, n_clusters, dimensions) for chunk in results_e]
 
-            args_m = [(chunk, dimensions) for chunk in cluster_chunks]
+                if n_processors > 1:
+                    # N workers run _map_m_step_optimized in parallel
+                    results_m_chunks = self.pool.starmap(_map_m_step, args_m_opt)
+                else:
+                    # Serial execution
+                    results_m_chunks = [_map_m_step(results_e[0], n_clusters, dimensions)]
+                    
+                t_m_end = time.time()
+                total_parallel_work += (t_m_end - t_m_start)
+                
+                # Reduce Phase (Serial global aggregation and center update)
+                t_s3_start = time.time()
+                
+                # 1. Initialize final global stats for all C clusters
+                final_stats = []
+                for _ in range(n_clusters):
+                    # Use numpy for final aggregation speed
+                    final_stats.append((numpy.zeros(dimensions), 0))
+                
+                # 2. Global summation of partial results from all N workers
+                for worker_stats in results_m_chunks:
+                    for i in range(n_clusters):
+                        partial_sum_list, partial_n = worker_stats[i]
+                        
+                        # Accumulate sum and count
+                        final_stats[i] = (
+                            final_stats[i][0] + numpy.array(partial_sum_list),
+                            final_stats[i][1] + partial_n
+                        )
 
-            all_stats = []
-            if n_processors > 1:
-                    results_m_chunks = self.pool.starmap(_map_m_step, args_m)
-            else:
-                results_m_chunks = [_map_m_step(*args_m[0])]
-            for chunk_stats in results_m_chunks:
-                all_stats.extend(chunk_stats)
-            t_m_end = time.time()
-            total_parallel_work += (t_m_end - t_m_start)
-            # 3. Final center: Update self.clusters
-            t_s3_start = time.time()
-            for i in range(n_clusters):
-                sum_of_data_list, n = all_stats[i]
+                # 3. Final Center Calculation, Update, and Convergence Check
+                moved_distance_sum = 0
+                for i in range(n_clusters):
+                    sum_of_data_np, n = final_stats[i]
+                    
+                    # Update center
+                    if n > 0:
+                        new_center = (sum_of_data_np / n).tolist()
+                        self.clusters[i].center = new_center
+                    
+                    # Convergence check
+                    new_center_np = numpy.array(self.clusters[i].center)
+                    old_center_np = old_centers[i]
+                    
+                    distance = numpy.linalg.norm(new_center_np - old_center_np)
+                    moved_distance_sum += distance
+                    
+                t_s3_end = time.time()
+                total_serial_work += (t_s3_end - t_s3_start)
                 
-                if n > 0:
-                    sum_of_data_np = numpy.array(sum_of_data_list)
-                    # New center
-                    new_center = (sum_of_data_np / n).tolist()
-                    self.clusters[i].center = new_center
-            
-            # Convergence check
-            moved_distance_sum = 0
-            for i in range(self.n_clusters):
-                new_center = numpy.array(self.clusters[i].center)
-                old_center = old_centers[i]
+                with open(log_filename, 'a') as f:
+                    f.write(f"ITERATION {iter_no}:\n")
+                    # f.write(f"SSE: {sse_value:.4f}\n")
+                    for i, cluster in enumerate(self.clusters):
+                        center_coords = ", ".join(f"{coord:.4f}" for coord in cluster.center)
+                        f.write(f"Center {i}: [{center_coords}]\n")
+                    
+                    f.write("---\n")
                 
-                distance = numpy.linalg.norm(new_center - old_center)
-                moved_distance_sum += distance
-            t_s3_end = time.time()
-            total_serial_work += (t_s3_end - t_s3_start)
-            #print("Iter no: " + str(iter_no) + ", Change of center: " + str(moved_distance_sum))
-            
-            if moved_distance_sum < tolerance:
-                break
+                if moved_distance_sum < tolerance:
+                    break
+                    
+                iter_no += 1
+                         
+            if self.pool is not None:
+                self.pool.close()
+                self.pool.join()
+                self.pool = None
                 
-            iter_no += 1
-        if self.pool is not None:
-            self.pool.close()
-            self.pool.join()
-            self.pool = None
-        total_time_s = total_serial_work + total_parallel_work
-        return (
-            timedelta(seconds=total_time_s),
-            timedelta(seconds=total_serial_work),
-            timedelta(seconds=total_parallel_work)
-        )
-
+            total_time_s = total_serial_work + total_parallel_work
+            return (
+                timedelta(seconds=total_time_s),
+                timedelta(seconds=total_serial_work),
+                timedelta(seconds=total_parallel_work)
+            )
+    
     def predict(self, point):
         min_distance = None
         cluster_index = None
@@ -191,3 +205,4 @@ class KMeans(object):
                 sse += distance**2 
         
         return sse
+    

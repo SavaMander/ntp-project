@@ -48,13 +48,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         
         let total_ideal_work = avg_Ts_work + avg_Tp_work; // T_s_work + T_p_work
         
-        // let fs = avg_Ts_work / total_ideal_work;
-        // let fp = avg_Tp_work / total_ideal_work;
         writeln!(file, "\n=== Statistics (N={}) ===", t)?;
         writeln!(file, "Average Wall-Clock Time: {:.4} s", avg_T_total)?;
         writeln!(file,"Average ideal work: {:.4} s", total_ideal_work);
-        // println!("Sequential part percentage (f_s): {:.2}%", fs * 100.0);
-        // println!("Parallel part percentage (f_p): {:.2}%", fp * 100.0);
     }
     Ok(())
 }

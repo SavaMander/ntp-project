@@ -8,9 +8,9 @@ from kmeans_parallel import KMeans # Pretpostavljamo da je izmenjeni kod u ovom 
 def main():
     # --- Konfiguracija Eksperimenta ---
     train_path = "../data/movielens1m.csv"
-    NUM_ROWS_LIMIT = 10000 # Ograničavanje skupa podataka (kao u Rust implementaciji)
-    NUM_RUNS = 30
-    MAX_THREADS = 2
+    NUM_ROWS_LIMIT = 500000 # Ograničavanje skupa podataka (kao u Rust implementaciji)
+    NUM_RUNS = 5
+    MAX_THREADS = 12
     K_CLUSTERS = 3 
     MAX_ITER = 5 
     OUTPUT_DIR = "strong_scaling"

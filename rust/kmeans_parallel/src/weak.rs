@@ -8,20 +8,20 @@ use ndarray::Array2;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = "../../data/movielens1m.csv";
     println!("Loading full dataset...");
-    let full_data = load_csv(path, None)?; // load entire dataset
+    let full_data = load_csv(path, None)?;
     let mut scaler = StandardScaler::new();
     let full_data = scaler.fit_transform(&full_data);
 
     const NUM_RUNS: usize = 30;
     const MAX_THREADS: usize = 12;
-    const BASE_ROWS_PER_THREAD: usize = 10000; // Each thread handles ~1000 points
+    const BASE_ROWS_PER_THREAD: usize = 10000;
 
     std::fs::create_dir_all("weak_scaling")?;
 
     for n_threads in 1..=MAX_THREADS {
         let num_rows = BASE_ROWS_PER_THREAD * n_threads;
         if num_rows > full_data.nrows() {
-            println!("⚠️ Not enough rows for {} threads, skipping...", n_threads);
+            println!("Not enough rows for {} threads, skipping...", n_threads);
             break;
         }
 
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut sum_T_serial = 0.0;
         let mut sum_T_parallel = 0.0;
 
-        println!("▶ Threads: {}, Data size: {}", n_threads, num_rows);
+        println!("Threads: {}, Data size: {}", n_threads, num_rows);
 
         for run in 1..=NUM_RUNS {
             let mut model = KMeans::new(3, 5, n_threads);

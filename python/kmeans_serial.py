@@ -27,11 +27,11 @@ class KMeans(object):
     def fit(self, data):
         self.data = data
         dimensions = len(self.data[0])
-
+        log_filename = "results/sequential/results.txt"
         serial_time = 0.0
-        parallel_time = 0.0  # will be 0 here, just for completeness
+        parallel_time = 0.0
 
-        # --- Initialize clusters (serial) ---
+        # Initialize clusters
         t0 = time.time()
         for i in range(self.n_clusters):
             point = [random.random() for _ in range(dimensions)]
@@ -41,45 +41,56 @@ class KMeans(object):
 
         iter_no = 0
         tolerance = 1e-4
+        with open(log_filename, 'w') as f:
+            while iter_no < self.max_iter:
+                # Clear clusters
+                t0 = time.time()
+                for cluster in self.clusters:
+                    cluster.data = []
+                t1 = time.time()
+                serial_time += (t1 - t0)
 
-        while iter_no < self.max_iter:
-            # --- Clear clusters (serial) ---
-            t0 = time.time()
-            for cluster in self.clusters:
-                cluster.data = []
-            t1 = time.time()
-            serial_time += (t1 - t0)
+                # E-step: Assign points to clusters
+                t0 = time.time()
+                for point in self.data:
+                    cluster_index = self.predict(point)
+                    self.clusters[cluster_index].data.append(point)
+                t1 = time.time()
+                parallel_time += (t1 - t0)
 
-            # --- E-step: Assign points to clusters (serial) ---
-            t0 = time.time()
-            for point in self.data:
-                cluster_index = self.predict(point)
-                self.clusters[cluster_index].data.append(point)
-            t1 = time.time()
-            parallel_time += (t1 - t0)
+                # M-step: Recalculate centers
+                old_centers = [np.array(c.center) for c in self.clusters]
+                t0 = time.time()
+                for cluster in self.clusters:
+                    cluster.recalculate_center()
+                t1 = time.time()
+                parallel_time += (t1 - t0)
 
-            # --- M-step: Recalculate centers (serial) ---
-            old_centers = [np.array(c.center) for c in self.clusters]
-            t0 = time.time()
-            for cluster in self.clusters:
-                cluster.recalculate_center()
-            t1 = time.time()
-            parallel_time += (t1 - t0)
+                sse_value = self.sum_squared_error() 
+                
+                f.write(f"ITERATION {iter_no}:\n")
+                f.write(f"SSE: {sse_value:.4f}\n")
+                
+                for i, cluster in enumerate(self.clusters):
+                    center_coords = ", ".join(f"{coord:.4f}" for coord in cluster.center)
+                    f.write(f"Center {i}: [{center_coords}]\n")
+                
+                f.write("---\n")
 
-            # --- Convergence check (serial) ---
-            t0 = time.time()
-            moved_distance_sum = 0
-            for i in range(self.n_clusters):
-                new_center = np.array(self.clusters[i].center)
-                old_center = old_centers[i]
-                distance = np.linalg.norm(new_center - old_center)
-                moved_distance_sum += distance
-            t1 = time.time()
-            serial_time += (t1 - t0)
+                # Convergence check
+                t0 = time.time()
+                moved_distance_sum = 0
+                for i in range(self.n_clusters):
+                    new_center = np.array(self.clusters[i].center)
+                    old_center = old_centers[i]
+                    distance = np.linalg.norm(new_center - old_center)
+                    moved_distance_sum += distance
+                t1 = time.time()
+                serial_time += (t1 - t0)
 
-            if moved_distance_sum < tolerance:
-                break
-            iter_no += 1
+                if moved_distance_sum < tolerance:
+                    break
+                iter_no += 1
 
         total_time = serial_time + parallel_time
         f_s = serial_time / total_time
@@ -97,19 +108,24 @@ class KMeans(object):
 
     def euclidean_distance(self, x, y):
         return np.linalg.norm(np.array(y) - np.array(x))
+    
+    def sum_squared_error(self):
+        sse = 0
+        for cluster in self.clusters:
+            for point in cluster.data:
+                distance = self.euclidean_distance(cluster.center, point)
+                sse += distance**2 
+        
+        return sse
 
-# ----------------------------
-# MAIN
-# ----------------------------
 if __name__ == "__main__":
-    # Generate a small random dataset
     base_train_path = "../data/movielens1m.csv"
     df_full = pd.read_csv(base_train_path,  nrows=10000)
     X_train = df_full.to_numpy()
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
 
-    kmeans = KMeans(n_clusters=3, max_iter=10)
+    kmeans = KMeans(n_clusters=5, max_iter=1000)
     f_s = kmeans.fit(X_train)
 
     print(f"Estimated fraction of serial code (f_s): {f_s*100:.2f}%")
