@@ -3,12 +3,11 @@ import datetime
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from kmeans_parallel import KMeans  # assumes modified code is in this file
+from kmeans_parallel import KMeans
 
 def main():
-    # --- Experiment Configuration ---
     base_train_path = "../data/movielens1m.csv"
-    BASE_ROWS_PER_THREAD = 1000     # each thread handles 2000 samples
+    BASE_ROWS_PER_THREAD = 1000
     NUM_RUNS = 30
     MAX_THREADS = 12
     K_CLUSTERS = 3
@@ -18,12 +17,10 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"Running Python Weak Scaling (K={K_CLUSTERS}, Max Threads={MAX_THREADS}, Runs={NUM_RUNS})...")
 
-    # Load dataset once
     df_full = pd.read_csv(base_train_path)
     total_rows_available = len(df_full)
 
     for t in range(1, MAX_THREADS + 1):
-        # Increase dataset size proportionally to thread count
         num_rows = BASE_ROWS_PER_THREAD * t
         if num_rows > total_rows_available:
             print(f"Not enough rows for {t} threads ({num_rows} > {total_rows_available}), skipping.")
@@ -37,7 +34,6 @@ def main():
         sum_Tp_work = 0.0
         sum_T_total = 0.0
 
-        # Prepare dataset subset and scale it
         df_train = df_full.iloc[:num_rows]
         X_train = df_train.to_numpy()
 
@@ -63,7 +59,6 @@ def main():
 
                     file.write(f"{i}, {t_fit_total_s:.6f}, {t_fit_serial_s:.6f}, {t_fit_parallel_s:.6f}\n")
 
-                # Statistics
                 avg_Ts_work = sum_Ts_work / NUM_RUNS
                 avg_Tp_work = sum_Tp_work / NUM_RUNS
                 avg_T_total = sum_T_total / NUM_RUNS

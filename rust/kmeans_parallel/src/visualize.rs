@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = "../../data/movielens1m.csv";
 
     println!("Loading data...");
-    let mut data = load_csv(path, Some(10000))?;
+    let mut data = load_csv(path, Some(5000))?;
 
     println!("Scaling data...");
     let mut scaler = StandardScaler::new();
